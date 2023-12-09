@@ -12,13 +12,51 @@ Simple Baselines for Image Restoration
   year={2022}
 }
 '''
-
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from basicsr.models.archs.arch_util import LayerNorm2d
-from basicsr.models.archs.local_arch import Local_Base
+from .local_arch import Local_Base
 import pdb
+
+class LayerNormFunction(torch.autograd.Function):
+
+    @staticmethod
+    def forward(ctx, x, weight, bias, eps):
+        ctx.eps = eps
+        N, C, H, W = x.size()
+        mu = x.mean(1, keepdim=True)
+        var = (x - mu).pow(2).mean(1, keepdim=True)
+        y = (x - mu) / (var + eps).sqrt()
+        ctx.save_for_backward(y, var, weight)
+        y = weight.view(1, C, 1, 1) * y + bias.view(1, C, 1, 1)
+        return y
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        eps = ctx.eps
+
+        N, C, H, W = grad_output.size()
+        y, var, weight = ctx.saved_variables
+        g = grad_output * weight.view(1, C, 1, 1)
+        mean_g = g.mean(dim=1, keepdim=True)
+
+        mean_gy = (g * y).mean(dim=1, keepdim=True)
+        gx = 1. / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
+        return gx, (grad_output * y).sum(dim=3).sum(dim=2).sum(dim=0), grad_output.sum(dim=3).sum(dim=2).sum(
+            dim=0), None
+
+class LayerNorm2d(nn.Module):
+
+    def __init__(self, channels, eps=1e-6):
+        super(LayerNorm2d, self).__init__()
+        self.register_parameter('weight', nn.Parameter(torch.ones(channels)))
+        self.register_parameter('bias', nn.Parameter(torch.zeros(channels)))
+        self.eps = eps
+
+    def forward(self, x):
+        return LayerNormFunction.apply(x, self.weight, self.bias, self.eps)
+
 
 class SimpleGate(nn.Module):
     def forward(self, x):
@@ -143,6 +181,16 @@ class NAFNet(nn.Module):
         self.padder_size = 2 ** len(self.encoders)
         # pdb.set_trace()
 
+    def load_weights(self, model_path):
+        cdir = os.path.dirname(__file__)
+        checkpoint = model_path if cdir == "" else cdir + "/" + model_path
+        state = torch.load(checkpoint)
+        if "params" in state:
+            state = state["params"]
+        self.load_state_dict(state)
+
+        # self.half().eval()
+
     def forward(self, inp):
         B, C, H, W = inp.shape
         inp = self.check_image_size(inp)
@@ -192,30 +240,3 @@ class NAFNetLocal(Local_Base, NAFNet):
 
         # pdb.set_trace()
 
-
-if __name__ == '__main__':
-    img_channel = 3
-    width = 32
-
-    # enc_blks = [2, 2, 4, 8]
-    # middle_blk_num = 12
-    # dec_blks = [2, 2, 2, 2]
-
-    enc_blks = [1, 1, 1, 28]
-    middle_blk_num = 1
-    dec_blks = [1, 1, 1, 1]
-    
-    net = NAFNet(img_channel=img_channel, width=width, middle_blk_num=middle_blk_num,
-                      enc_blk_nums=enc_blks, dec_blk_nums=dec_blks)
-
-
-    inp_shape = (3, 256, 256)
-
-    from ptflops import get_model_complexity_info
-
-    macs, params = get_model_complexity_info(net, inp_shape, verbose=False, print_per_layer_stat=False)
-
-    params = float(params[:-3])
-    macs = float(macs[:-4])
-
-    print(macs, params)

@@ -19,6 +19,7 @@ from basicsr.utils.dist_util import get_dist_info
 
 loss_module = importlib.import_module('basicsr.models.losses')
 metric_module = importlib.import_module('basicsr.metrics')
+import pdb
 
 class ImageRestorationModel(BaseModel):
     """Base Deblur model for single image deblur."""
@@ -27,19 +28,20 @@ class ImageRestorationModel(BaseModel):
         super(ImageRestorationModel, self).__init__(opt)
 
         # define network
-        self.net_g = define_network(deepcopy(opt['network_g']))
+        self.net_g = define_network(deepcopy(opt['network_g'])) # NAFNet, NAFNetLocal
         self.net_g = self.model_to_device(self.net_g)
 
         # load pretrained models
         load_path = self.opt['path'].get('pretrain_network_g', None)
+        # 'experiments/pretrained_models/NAFNet-SIDD-width64.pth'
         if load_path is not None:
             self.load_network(self.net_g, load_path,
-                              self.opt['path'].get('strict_load_g', True), param_key=self.opt['path'].get('param_key', 'params'))
-
+                              self.opt['path'].get('strict_load_g', True), # True
+                              param_key=self.opt['path'].get('param_key', 'params')) # 'params'
         if self.is_train:
             self.init_training_settings()
 
-        self.scale = int(opt['scale'])
+        self.scale = int(opt['scale']) # 1
 
     def init_training_settings(self):
         self.net_g.train()

@@ -5,6 +5,10 @@
 # Copyright 2018-2020 BasicSR Authors
 # ------------------------------------------------------------------------
 import torch
+import sys
+import todos
+import pdb
+# print(sys.path)
 
 # from basicsr.data import create_dataloader, create_dataset
 from basicsr.models import create_model
@@ -41,9 +45,12 @@ def main():
     opt['dist'] = False
     model = create_model(opt)
 
+    #tensor [img] size: [3, 720, 1280], min: 0.0, max: 1.0, mean: 0.531543
     model.feed_data(data={'lq': img.unsqueeze(dim=0)})
+    # model -- ImageRestorationModel
+    # model.net_g -- NAFNetLocal
 
-    if model.opt['val'].get('grids', False):
+    if model.opt['val'].get('grids', False): # False
         model.grids()
 
     model.test()
